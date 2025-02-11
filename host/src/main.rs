@@ -87,45 +87,45 @@ fn main() {
     let g16_proof = proof_with_method_id.proof;
     let method_id = proof_with_method_id.method_id;
 
-    let seal = Seal::from_vec(&g16_proof.seal).unwrap();
+    // let seal = Seal::from_vec(&g16_proof.seal).unwrap();
 
-    let a_compressed = g1_compress(seal.a);
-    let b_compressed = g2_compress(seal.b);
-    let c_compressed = g1_compress(seal.c);
+    // let a_compressed = g1_compress(seal.a);
+    // let b_compressed = g2_compress(seal.b);
+    // let c_compressed = g1_compress(seal.c);
 
-    let commited_total_work: [u8; 16] = g16_proof.journal.bytes.try_into().unwrap();
+    // let commited_total_work: [u8; 16] = g16_proof.journal.bytes.try_into().unwrap();
 
-    let mut compressed_proof: Vec<u8> = vec![0; 144];
-    compressed_proof[0..32].copy_from_slice(&a_compressed[..32]);
-    compressed_proof[32..96].copy_from_slice(&b_compressed[..64]);
-    compressed_proof[96..128].copy_from_slice(&c_compressed[..32]);
-    compressed_proof[128..144].copy_from_slice(&commited_total_work);
+    // let mut compressed_proof: Vec<u8> = vec![0; 144];
+    // compressed_proof[0..32].copy_from_slice(&a_compressed[..32]);
+    // compressed_proof[32..96].copy_from_slice(&b_compressed[..64]);
+    // compressed_proof[96..128].copy_from_slice(&c_compressed[..32]);
+    // compressed_proof[128..144].copy_from_slice(&commited_total_work);
 
-    let n0 = compressed_proof.len();
-    let log_d = 8;
-    let params = Parameters::new(n0.try_into().unwrap(), log_d);
-    let input: u64 = 1;
-    let mut rng = SmallRng::seed_from_u64(input);
-    let secret_key: Vec<u8> = (0..n0).map(|_| rng.gen()).collect();
-    let pub_key: Vec<[u8; 20]> = generate_public_key(&params, &secret_key);
+    // let n0 = compressed_proof.len();
+    // let log_d = 8;
+    // let params = Parameters::new(n0.try_into().unwrap(), log_d);
+    // let input: u64 = 1;
+    // let mut rng = SmallRng::seed_from_u64(input);
+    // let secret_key: Vec<u8> = (0..n0).map(|_| rng.gen()).collect();
+    // let pub_key: Vec<[u8; 20]> = generate_public_key(&params, &secret_key);
 
-    let signature = sign_digits(&params, &secret_key, &compressed_proof);
-    let env = ExecutorEnv::builder()
-        .write(&pub_key)
-        .unwrap()
-        .write(&params)
-        .unwrap()
-        .write(&signature)
-        .unwrap()
-        .write(&compressed_proof)
-        .unwrap()
-        .write(&WORK_ONLY_ID)
-        .unwrap()
-        .build()
-        .unwrap();
-    let executor = default_executor();
+    // let signature = sign_digits(&params, &secret_key, &compressed_proof);
+    // let env = ExecutorEnv::builder()
+    //     .write(&pub_key)
+    //     .unwrap()
+    //     .write(&params)
+    //     .unwrap()
+    //     .write(&signature)
+    //     .unwrap()
+    //     .write(&compressed_proof)
+    //     .unwrap()
+    //     .write(&WORK_ONLY_ID)
+    //     .unwrap()
+    //     .build()
+    //     .unwrap();
+    // let executor = default_executor();
 
-    println!("Exec result: {:?}", executor.execute(env, WINTERNITZ_ELF));
+    // println!("Exec result: {:?}", executor.execute(env, WINTERNITZ_ELF));
 }
 
 fn call_work_only(
