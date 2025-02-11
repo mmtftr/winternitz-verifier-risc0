@@ -1,5 +1,5 @@
 use ark_bn254::{g1, Fr};
-use borsh::{self, BorshDeserialize};
+use borsh::{self, BorshDeserialize, BorshSerialize};
 use header_chain::header_chain::{
     BlockHeaderCircuitOutput, CircuitBlockHeader, HeaderChainCircuitInput, HeaderChainPrevProofType,
 };
@@ -11,7 +11,7 @@ use risc0_zkvm::{
     Receipt,
 };
 
-use std::convert::TryInto;
+use std::{convert::TryInto, fs::File, io::Read};
 use winternitz::{WINTERNITZ_ELF, WINTERNITZ_ID};
 use winternitz_core::{g1_compress, g2_compress, generate_public_key, sign_digits, Parameters};
 use work_only::{WORK_ONLY_ELF, WORK_ONLY_ID};
@@ -49,7 +49,7 @@ fn main() {
         work_only_groth16_proof_receipt
     );
 
-    #[derive(BorshSerialize, BorshDeserialize)]
+    #[derive(BorshSerialize, BorshDeserialize, Debug)]
     struct Groth16ProofWithMethodId {
         proof: risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim>,
         method_id: [u32; 8],
@@ -59,9 +59,9 @@ fn main() {
     let mut file = File::create("work_only_groth16_proof.bin").unwrap();
 
     // if there is a file, read it, otherwise create it
-    let proof_with_method_id = if let Ok(mut file) = File::open("work_only_groth16_proof.bin") {
+    let proof_with_method_id: Groth16ProofWithMethodId = if let Ok(mut file) = File::open("work_only_groth16_proof.bin") {
         let proof_with_method_id: Groth16ProofWithMethodId =
-            borsh::BorshDeserialize::try_from_slice(&file.read_to_end().unwrap()).unwrap();
+            borsh::BorshDeserialize::try_from_slice(&file.read_to_end()).unwrap();
         println!("Proof with Method ID: {:?}", proof_with_method_id);
         proof_with_method_id
     } else {
@@ -69,8 +69,8 @@ fn main() {
             work_only_groth16_proof_receipt.inner.groth16().unwrap();
 
         let proof_with_method_id = Groth16ProofWithMethodId {
-            proof: g16_proof,
-            method_id: headerchain_proof.method_id,
+            proof: *g16_proof,
+            method_id: WORK_ONLY_ID,
         };
         file.write_all(borsh::to_vec(&proof_with_method_id).unwrap())
             .unwrap();
