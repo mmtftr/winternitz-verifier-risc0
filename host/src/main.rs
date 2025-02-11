@@ -1,4 +1,4 @@
-use ark_bn254::{g1, Fr};
+use ark_bn254::{g1, Fr, G1Affine};
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use header_chain::header_chain::{
     BlockHeaderCircuitOutput, CircuitBlockHeader, HeaderChainCircuitInput, HeaderChainPrevProofType,
@@ -11,7 +11,11 @@ use risc0_zkvm::{
     Receipt,
 };
 
-use std::{convert::TryInto, fs::File, io::{Read, Write}};
+use std::{
+    convert::TryInto,
+    fs::File,
+    io::{Read, Write},
+};
 use winternitz::{WINTERNITZ_ELF, WINTERNITZ_ID};
 use winternitz_core::{g1_compress, g2_compress, generate_public_key, sign_digits, Parameters};
 use work_only::{WORK_ONLY_ELF, WORK_ONLY_ID};
@@ -39,7 +43,10 @@ pub fn generate_header_chain_g16_proof(file_name: &str) -> Groth16ProofWithMetho
         let mut bytes = Vec::new();
         if file.read_to_end(&mut bytes).is_ok() {
             if let Ok(proof_with_method_id) = borsh::BorshDeserialize::try_from_slice(&bytes) {
-                println!("Successfully read proof from file: {:?}", proof_with_method_id);
+                println!(
+                    "Successfully read proof from file: {:?}",
+                    proof_with_method_id
+                );
                 return proof_with_method_id;
             }
         }
@@ -77,6 +84,33 @@ pub fn generate_header_chain_g16_proof(file_name: &str) -> Groth16ProofWithMetho
 
     proof_with_method_id
 }
+
+// pub struct CompressedGroth16Proof {
+//     a: [u8; 32],
+//     b: [u8; 64],
+//     c: [u8; 32],
+// }
+
+// impl CompressedGroth16Proof {
+//     // from seal, compress the proof
+//     pub fn from_seal(seal: Seal) -> Self {
+//         let a_compressed = g1_compress(seal.a);
+//         let b_compressed = g2_compress(seal.b);
+//         let c_compressed = g1_compress(seal.c);
+//         Self {
+//             a: a_compressed,
+//             b: b_compressed,
+//             c: c_compressed,
+//         }
+//     }
+//     pub fn to_seal(self) -> Seal {
+//         let a = g1_decompress(&self.a).unwrap();
+//         let b = g2_decompress(&self.b).unwrap();
+//         let c = g1_decompress(&self.c).unwrap();
+//         Seal { a, b, c }
+//     }
+
+// }
 fn main() {
     let verifiying_key: risc0_groth16::VerifyingKey = verifying_key();
     println!("ver_key: {:#?}", verifiying_key);
@@ -87,13 +121,22 @@ fn main() {
     let g16_proof = proof_with_method_id.proof;
     let method_id = proof_with_method_id.method_id;
 
-    // let seal = Seal::from_vec(&g16_proof.seal).unwrap();
+    let seal = Seal::from_vec(&g16_proof.inner.groth16().unwrap().seal).unwrap();
 
-    // let a_compressed = g1_compress(seal.a);
-    // let b_compressed = g2_compress(seal.b);
-    // let c_compressed = g1_compress(seal.c);
+    g16_proof.verify(method_id).unwrap();
 
-    // let commited_total_work: [u8; 16] = g16_proof.journal.bytes.try_into().unwrap();
+    // let g1 = G1Affine::from_vec(&seal.a).unwrap();
+    // let g2 = G2Affine::from_vec(&seal.b).unwrap();
+    // let g3 = G1Affine::from_vec(&seal.c).unwrap();
+
+    // let ark_groth16_proof: ark_groth16::Proof<Bn254> =
+    //     ark_groth16::Proof::<Bn254>::from_ark_groth16_proof(seal);
+
+    let a_compressed = g1_compress(seal.a);
+    let b_compressed = g2_compress(seal.b);
+    let c_compressed = g1_compress(seal.c);
+
+    let commited_total_work: [u8; 16] = g16_proof.journal.bytes.try_into().unwrap();
 
     // let mut compressed_proof: Vec<u8> = vec![0; 144];
     // compressed_proof[0..32].copy_from_slice(&a_compressed[..32]);
