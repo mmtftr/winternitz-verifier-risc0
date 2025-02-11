@@ -27,9 +27,25 @@ fn le_to_be(input: [u32; 16]) -> [u32; 16] {
     output.reverse();
     output
 }
-fn main() {
-    let verifiying_key: risc0_groth16::VerifyingKey = verifying_key();
-    println!("ver_key: {:#?}", verifiying_key);
+
+#[derive(Copy, Clone, BorshSerialize, BorshDeserialize, Debug)]
+struct Groth16ProofWithMethodId {
+    proof: risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim>,
+    method_id: [u32; 8],
+}
+pub fn generate_header_chain_g16_proof(file_name: &str) -> Groth16ProofWithMethodId {
+    // Try to read from file first
+    if let Ok(mut file) = File::open(file_name) {
+        let mut bytes = Vec::new();
+        if file.read_to_end(&mut bytes).is_ok() {
+            if let Ok(proof_with_method_id) = borsh::BorshDeserialize::try_from_slice(&bytes) {
+                println!("Successfully read proof from file: {:?}", proof_with_method_id);
+                return proof_with_method_id;
+            }
+        }
+    }
+
+    // If reading fails, generate new proof
     let headerchain_proof: Receipt = generate_header_chain_proof();
     let block_header_circuit_output: BlockHeaderCircuitOutput =
         borsh::BorshDeserialize::try_from_slice(&headerchain_proof.journal.bytes[..]).unwrap();
@@ -49,33 +65,27 @@ fn main() {
         work_only_groth16_proof_receipt
     );
 
-    #[derive(BorshSerialize, BorshDeserialize, Debug)]
-    struct Groth16ProofWithMethodId {
-        proof: risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim>,
-        method_id: [u32; 8],
-    }
+    let proof_with_method_id = Groth16ProofWithMethodId {
+        proof: work_only_groth16_proof_receipt,
+        method_id: block_header_circuit_output.method_id,
+    };
 
     // save the proof to a file borsh serialized
     let mut file = File::create("work_only_groth16_proof.bin").unwrap();
+    file.write_all(borsh::to_vec(&proof_with_method_id).unwrap())
+        .unwrap();
+
+    proof_with_method_id
+}
+fn main() {
+    let verifiying_key: risc0_groth16::VerifyingKey = verifying_key();
+    println!("ver_key: {:#?}", verifiying_key);
 
     // if there is a file, read it, otherwise create it
-    let proof_with_method_id: Groth16ProofWithMethodId = if let Ok(mut file) = File::open("work_only_groth16_proof.bin") {
-        let proof_with_method_id: Groth16ProofWithMethodId =
-            borsh::BorshDeserialize::try_from_slice(&file.read_to_end()).unwrap();
-        println!("Proof with Method ID: {:?}", proof_with_method_id);
-        proof_with_method_id
-    } else {
-        let g16_proof: &risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim> =
-            work_only_groth16_proof_receipt.inner.groth16().unwrap();
+    let proof_with_method_id = generate_header_chain_g16_proof("work_only_groth16_proof.bin");
 
-        let proof_with_method_id = Groth16ProofWithMethodId {
-            proof: *g16_proof,
-            method_id: WORK_ONLY_ID,
-        };
-        file.write_all(borsh::to_vec(&proof_with_method_id).unwrap())
-            .unwrap();
-        proof_with_method_id
-    };
+    let g16_proof = proof_with_method_id.proof;
+    let method_id = proof_with_method_id.method_id;
 
     let seal = Seal::from_vec(&g16_proof.seal).unwrap();
 
@@ -83,11 +93,7 @@ fn main() {
     let b_compressed = g2_compress(seal.b);
     let c_compressed = g1_compress(seal.c);
 
-    let commited_total_work: [u8; 16] = work_only_groth16_proof_receipt
-        .journal
-        .bytes
-        .try_into()
-        .unwrap();
+    let commited_total_work: [u8; 16] = g16_proof.journal.bytes.try_into().unwrap();
 
     let mut compressed_proof: Vec<u8> = vec![0; 144];
     compressed_proof[0..32].copy_from_slice(&a_compressed[..32]);
