@@ -1,13 +1,14 @@
 use ark_bn254::{g1, Fr};
 use borsh::{self, BorshDeserialize};
 use header_chain::header_chain::{
-BlockHeaderCircuitOutput, CircuitBlockHeader, HeaderChainCircuitInput, HeaderChainPrevProofType,
+    BlockHeaderCircuitOutput, CircuitBlockHeader, HeaderChainCircuitInput, HeaderChainPrevProofType,
 };
 use headerchain::{HEADERCHAIN_ELF, HEADERCHAIN_ID};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use risc0_groth16::{verifying_key, Seal, self};
+use risc0_groth16::{self, verifying_key, Seal};
 use risc0_zkvm::{
-    compute_image_id, default_executor, default_prover, guest::env, ExecutorEnv, ProverOpts, Receipt
+    compute_image_id, default_executor, default_prover, guest::env, ExecutorEnv, ProverOpts,
+    Receipt,
 };
 
 use std::convert::TryInto;
@@ -39,15 +40,42 @@ fn main() {
         block_header_circuit_output.method_id,
     );
 
-    println!("Work Only Groth16 Proof Receipt: {:?}", work_only_groth16_proof_receipt);
+    work_only_groth16_proof_receipt
+        .verify(WORK_ONLY_ID)
+        .unwrap();
 
+    println!(
+        "Work Only Groth16 Proof Receipt: {:?}",
+        work_only_groth16_proof_receipt
+    );
 
+    #[derive(BorshSerialize, BorshDeserialize)]
+    struct Groth16ProofWithMethodId {
+        proof: risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim>,
+        method_id: [u32; 8],
+    }
 
-    let g16_proof: &risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim> =
-        work_only_groth16_proof_receipt.inner.groth16().unwrap();
+    // save the proof to a file borsh serialized
+    let mut file = File::create("work_only_groth16_proof.bin").unwrap();
 
+    // if there is a file, read it, otherwise create it
+    let proof_with_method_id = if let Ok(mut file) = File::open("work_only_groth16_proof.bin") {
+        let proof_with_method_id: Groth16ProofWithMethodId =
+            borsh::BorshDeserialize::try_from_slice(&file.read_to_end().unwrap()).unwrap();
+        println!("Proof with Method ID: {:?}", proof_with_method_id);
+        proof_with_method_id
+    } else {
+        let g16_proof: &risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim> =
+            work_only_groth16_proof_receipt.inner.groth16().unwrap();
 
-
+        let proof_with_method_id = Groth16ProofWithMethodId {
+            proof: g16_proof,
+            method_id: headerchain_proof.method_id,
+        };
+        file.write_all(borsh::to_vec(&proof_with_method_id).unwrap())
+            .unwrap();
+        proof_with_method_id
+    };
 
     let seal = Seal::from_vec(&g16_proof.seal).unwrap();
 
@@ -67,8 +95,6 @@ fn main() {
     compressed_proof[96..128].copy_from_slice(&c_compressed[..32]);
     compressed_proof[128..144].copy_from_slice(&commited_total_work);
 
-
-
     let n0 = compressed_proof.len();
     let log_d = 8;
     let params = Parameters::new(n0.try_into().unwrap(), log_d);
@@ -76,7 +102,7 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(input);
     let secret_key: Vec<u8> = (0..n0).map(|_| rng.gen()).collect();
     let pub_key: Vec<[u8; 20]> = generate_public_key(&params, &secret_key);
-    
+
     let signature = sign_digits(&params, &secret_key, &compressed_proof);
     let env = ExecutorEnv::builder()
         .write(&pub_key)
