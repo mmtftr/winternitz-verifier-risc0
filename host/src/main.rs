@@ -74,7 +74,7 @@ pub fn generate_header_chain_g16_proof(file_name: &str) -> Groth16ProofWithMetho
 
     let proof_with_method_id = Groth16ProofWithMethodId {
         proof: work_only_groth16_proof_receipt,
-        method_id: block_header_circuit_output.method_id,
+        method_id: WORK_ONLY_ID,
     };
 
     // save the proof to a file borsh serialized
