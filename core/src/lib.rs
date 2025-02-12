@@ -1,5 +1,5 @@
 pub mod utils;
-mod constants;
+pub mod constants;
 pub mod groth16;
 use ark_bn254;
 use ark_bn254::{Bn254, Fr};

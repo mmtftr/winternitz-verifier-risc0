@@ -4,15 +4,16 @@ use header_chain::header_chain::{
 };
 use headerchain::HEADERCHAIN_ELF;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use risc0_groth16::{self, Seal};
+use risc0_groth16::{self, split_digest, verifying_key, Seal};
 use risc0_zkvm::{
-    compute_image_id, default_executor, default_prover, ExecutorEnv, ProverOpts, Receipt,
+    compute_image_id, default_executor, default_prover, sha::{Digest, Digestible}, ExecutorEnv, ProverOpts, Receipt, VerifierContext
 };
 use std::convert::TryInto;
 use winternitz::WINTERNITZ_ELF;
-use winternitz_core::{generate_public_key, sign_digits, Parameters};
+use winternitz_core::{constants::create_verifying_key, generate_public_key, groth16, sign_digits, Parameters};
 use work_only::{WORK_ONLY_ELF, WORK_ONLY_ID};
 use winternitz_core::groth16::Groth16Seal;
+use crate::risc0_groth16::fr_from_hex_string;
 const HEADERS: &[u8] = include_bytes!("regtest-headers.bin");
 
 fn main() {
@@ -25,10 +26,24 @@ fn main() {
         block_header_circuit_output.method_id,
     );
 
-    let g16_proof: &risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim> =
+    let g16_proof_receipt: &risc0_zkvm::Groth16Receipt<risc0_zkvm::ReceiptClaim> =
         work_only_groth16_proof_receipt.inner.groth16().unwrap();
+    println!("g16_proof_receipt: {:#?}", g16_proof_receipt);
+    g16_proof_receipt.verify_integrity().unwrap();
+    let seal = Groth16Seal::from_seal(g16_proof_receipt.seal.as_slice().try_into().unwrap());
 
-    let seal = Groth16Seal::from_seal(g16_proof.seal.as_slice().try_into().unwrap());
+    let verifier_context = VerifierContext::default();
+    let groth16_verifier_parameters = verifier_context.groth16_verifier_parameters.unwrap();
+
+    let (a0, a1) = split_digest(groth16_verifier_parameters.control_root).unwrap();
+    let (c0, c1) = split_digest(g16_proof_receipt.claim.digest()).unwrap();
+    let mut id_bn554: Digest = groth16_verifier_parameters.bn254_control_id;
+    id_bn554.as_mut_bytes().reverse();
+    let id_bn254_fr = fr_from_hex_string(&hex::encode(id_bn554)).unwrap();
+
+    let risc0_groth16_seal: risc0_groth16::Seal = Seal::from_vec(&g16_proof_receipt.seal).unwrap();
+    // let risc0_groth16_public_inputs = g16_proof_receipt.clone().claim.value().unwrap();
+    // println!("risc0_groth16_public_inputs: {:#?}", risc0_groth16_public_inputs);
 
     let compressed_proof = seal.get_compressed();
 
@@ -49,6 +64,19 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(input);
     let secret_key: Vec<u8> = (0..n0).map(|_| rng.gen()).collect();
     let pub_key: Vec<[u8; 20]> = generate_public_key(&params, &secret_key);
+
+    let ark_g16_vk: ark_groth16::VerifyingKey<ark_ec::bn::Bn<ark_bn254::Config>> = create_verifying_key();
+    let risc0_g16_vk: risc0_groth16::VerifyingKey = verifying_key();
+    println!("risc0_g16_seal: {:#?}", risc0_groth16_seal);
+    println!("a0: {:#?}", a0);
+    println!("a1: {:#?}", a1);
+    println!("c0: {:#?}", c0);
+    println!("c1: {:#?}", c1);
+    println!("id_bn254_fr: {:#?}", id_bn254_fr);
+    println!("ark_g16_vk: {:#?}", ark_g16_vk);
+    println!("risc0_g16_vk: {:#?}", risc0_g16_vk);
+    let risc0_groth16_verifier = risc0_groth16::Verifier::new(&risc0_groth16_seal, &[a0, a1, c0, c1, id_bn254_fr], &risc0_g16_vk).unwrap();
+    println!("RISC0 GROTH16 VERIFY RESULT: {:?}", risc0_groth16_verifier.verify().unwrap());
 
     let signature = sign_digits(&params, &secret_key, &compressed_proof_and_total_work);
     let env = ExecutorEnv::builder()
